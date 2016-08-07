@@ -26,6 +26,30 @@
 
 import Foundation
 
+extension String {
+    
+    /// Create NSData from hexadecimal string representation
+    ///
+    /// This takes a hexadecimal representation and creates a NSData object. Note, if the string has any spaces or non-hex characters (e.g. starts with '<' and with a '>'), those are ignored and only hex characters are processed.
+    ///
+    /// The use of `strtoul` inspired by Martin R at [http://stackoverflow.com/a/26284562/1271826](http://stackoverflow.com/a/26284562/1271826)
+    ///
+    /// - returns: NSData represented by this hexadecimal string.
+    
+    func dataFromHexadecimalString() -> NSData? {
+        let data = NSMutableData(capacity: characters.count / 2)
+        
+        let regex = try! NSRegularExpression(pattern: "[0-9a-f]{1,2}", options: .CaseInsensitive)
+        regex.enumerateMatchesInString(self, options: [], range: NSMakeRange(0, characters.count)) { match, flags, stop in
+            let byteString = (self as NSString).substringWithRange(match!.range)
+            let num = UInt8(byteString.withCString { strtoul($0, nil, 16) })
+            data?.appendBytes([num], length: 1)
+        }
+        
+        return data
+    }
+}
+
 /// The `RNCryptorType` protocol defines generic API to a mutable,
 /// incremental, password-based encryptor or decryptor. Its generic
 /// usage is as follows:
@@ -286,15 +310,29 @@ public extension RNCryptor {
         private var hmac: HMACV3
         private var pendingHeader: NSData?
 
+        public static func partialRandomDataOfLength(length : Int) -> NSData
+        {
+            /// Generates random NSData of given length
+            /// Crashes if `length` is larger than allocatable memory, or if the system random number generator is not available.
+            let data = NSMutableData(length: length)!
+            data.appendBytes(RNCryptor.randomDataOfLength(8).bytes, length: 8)
+            
+            return data
+        }
+
         /// Creates and returns an encryptor.
         ///
         /// - parameter password: Non-empty password string. This will be interpretted as UTF-8.
         public convenience init(password: String) {
+            let hexString = "00010203040506070000000000000000"
+            
+            let hexData = hexString.dataFromHexadecimalString()
+            
             self.init(
                 password: password,
                 encryptionSalt: RNCryptor.randomDataOfLength(V3.saltSize),
                 hmacSalt: RNCryptor.randomDataOfLength(V3.saltSize),
-                iv: RNCryptor.randomDataOfLength(V3.ivSize))
+                iv: hexData!) //EncryptorV3.partialRandomDataOfLength(V3.ivSize))//RNCryptor.randomDataOfLength(V3.ivSize))
         }
 
         /// Creates and returns an encryptor using keys.
@@ -312,7 +350,11 @@ public extension RNCryptor {
         ///     - encryptionKey: AES-256 key. Must be exactly FormatV3.keySize (kCCKeySizeAES256, 32 bytes)
         ///     - hmacKey: HMAC key. Must be exactly FormatV3.keySize (kCCKeySizeAES256, 32 bytes)
         public convenience init(encryptionKey: NSData, hmacKey: NSData) {
-            self.init(encryptionKey: encryptionKey, hmacKey: hmacKey, iv: RNCryptor.randomDataOfLength(V3.ivSize))
+            let hexString = "00010203040506070000000000000000"
+            
+            let hexData = hexString.dataFromHexadecimalString()
+
+            self.init(encryptionKey: encryptionKey, hmacKey: hmacKey, iv: hexData!) // RNCryptor.randomDataOfLength(V3.ivSize))
         }
 
         /// Takes a data, returns a processed data, and invalidates the cryptor.
